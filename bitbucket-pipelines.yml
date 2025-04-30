@@ -1,0 +1,181 @@
+# Pixi game build pipeline#
+# Copies to testing servers
+
+#image: gameart/bb-pixi-wp-alpine-private:0.6
+image: 
+  name: gameart/bb-pixi-wp-alpine-private:0.6
+  username: $DOCKER_HUB_GA_USERNAME
+  password: $DOCKER_HUB_GA_PASSWORD
+
+clone:
+  depth: full
+
+pipelines:
+  custom: # defines that this can only be triggered manually or by a schedule
+    custom-cert-pipeline: # The name that is displayed in the list in the Bitbucket Cloud GUI
+      - variables:
+          - name: CERT_MARKET_PICK
+            # default: IT  
+            # allowed-values:         # optionally restrict variable values
+            # - IT
+            # - MT
+            # - DE
+            # - NL
+      - step:
+          deployment: CERT
+          name: 'Deploying to CERT'
+          script:
+            - git clone git@bitbucket.org:gameartteam/devopsscripts.git ./devopsscripts/
+            - cp -r ./devopsscripts/JBBI-WebPackV2/. .
+            - sh pipe_cert_ops_procedure.sh
+          artifacts:
+          - prod_bin/**
+          - pipe_cert_deploy_procedure.sh
+          - changeStatus.py
+          - sendCommentScript.py
+          - bashjson.json
+          - future_scripts/**
+          - certVersionPixi.ps1
+      - step:
+          name: 'Deploy to games/cert/'
+          deployment: CertDeploy
+          trigger: automatic
+          size: 4x
+          runtime:
+            cloud: 
+              atlassian-ip-ranges: true
+          script:
+            # Deployment using RSYNC pipeline PIXI client version
+            - pipe: atlassian/rsync-deploy:0.8.1
+              variables:
+                USER: 'gameart'
+                SERVER: 'hg4dev.gahypergaming.com'
+                REMOTE_PATH: '/mnt/games/cert/$CERT_MARKET_PICK/$GAMENAME'
+                LOCAL_PATH: 'prod_bin/*'
+                DEBUG: 'true'
+            - sh pipe_cert_deploy_procedure.sh
+    development:
+      - step:
+          name: 'Building game DEV'
+          script:
+            - npm i rimraf
+            - npm run clean
+            - npm run il
+            - npm list
+            - npm run buildWithUpdateBB
+            - pwsh -File ./clientVersionPixi.ps1 $GAMENAME
+            - ls
+          artifacts:
+            - prod_bin/**
+      - step:
+          name: 'Deploy to custom/DEVENV/'
+          deployment: Dev
+          trigger: automatic
+          size: 4x
+          runtime:
+            cloud: 
+              atlassian-ip-ranges: true
+          script:
+            # Deployment using RSYNC pipeline PIXI client version
+            - ls
+            - pipe: atlassian/rsync-deploy:0.8.1
+              variables:
+                USER: 'gameart'
+                SERVER: 'hg4dev.gahypergaming.com'
+                REMOTE_PATH: '/mnt/games/slotgames/custom/DEVENV/$GAMENAME'
+                LOCAL_PATH: 'prod_bin/*'
+                DEBUG: 'true'
+  branches:
+    master:
+      - step:
+          name: 'Building game'
+          script:
+            - git clone git@bitbucket.org:gameartteam/devopsscripts.git ./devopsscripts/
+            - cp -r ./devopsscripts/JBBI-WebPackV2/. .
+            - sh pipe_build_ops_procedure.sh
+          artifacts:
+            - prod_bin/**
+            - archive_build/**
+            - bashjson.json
+            - archiveUpload.py
+            - changeStatus.py
+            - databaseUpdate.py
+            - sendCommentScript.py
+            - sendVersionToJira.py
+            - future_scripts/**
+            ######- certVersionPixi.ps1
+            - pipe_build_ops_procedure.sh
+            - pipe_build_deploy_procedure.sh
+            - pipe_custom_deploy_procedure.sh
+            - pipe_dev_deploy_procedure.sh
+            - pipe_dev_ops_procedure.sh
+            - pipe_stage_deploy_procedure.sh
+            - pipe_stage_log_procedure.sh
+      - step:
+          name: 'Deploy to games/build/'
+          deployment: Test
+          trigger: automatic
+          size: 4x
+          runtime:
+            cloud: 
+              atlassian-ip-ranges: true
+          script:
+            # Deployment using RSYNC pipeline PIXI client version
+            - pipe: atlassian/rsync-deploy:0.8.1
+              variables:
+                USER: 'gameart'
+                SERVER: 'hg4dev.gahypergaming.com'
+                REMOTE_PATH: '/mnt/games/build/$GAMENAME'
+                LOCAL_PATH: 'prod_bin/*'
+                DEBUG: 'true'
+            - sh pipe_build_deploy_procedure.sh
+      - parallel:
+        - step:
+            name: 'Deploy this build to test CustomPath'
+            deployment: Custom
+            trigger: manual
+            size: 4x
+            runtime:
+              cloud: 
+                atlassian-ip-ranges: true
+            script:
+              - export CUSTOM_PATH='/mnt/games/slotgames/custom/CPT/'$GAMENAME
+              # Deployment using RSYNC pipeline PIXI client version
+              - pipe: atlassian/rsync-deploy:0.8.1
+                variables:
+                  USER: 'gameart'
+                  SERVER: 'hg4dev.gahypergaming.com'
+                  REMOTE_PATH: '$CUSTOM_PATH'
+                  LOCAL_PATH: 'prod_bin/*'
+                  DEBUG: 'true'
+              - echo $CUSTOM_PATH
+        - step:
+            name: 'Deploy to games/stage/'
+            deployment: Stage
+            trigger: manual
+            size: 4x
+            runtime:
+              cloud: 
+                atlassian-ip-ranges: true
+            script:
+            - ls
+            # Deployment using RSYNC pipeline PIXI client version
+            - pipe: atlassian/rsync-deploy:0.8.1
+              variables:
+                USER: 'gameart'
+                SERVER: 'hg4dev.gahypergaming.com'
+                REMOTE_PATH: '/mnt/games/stage/$GAMENAME'
+                LOCAL_PATH: 'prod_bin/*'
+                DEBUG: 'true'
+            - sh pipe_stage_deploy_procedure.sh
+            - BACKUP_UPLOAD_PATH=$(cat backup_upload_path.txt)
+            - echo $BACKUP_UPLOAD_PATH
+            - pipe: atlassian/rsync-deploy:0.8.1
+              variables:
+                USER: 'gameart'
+                SERVER: 'hg4dev.gahypergaming.com'
+                REMOTE_PATH: '$BACKUP_UPLOAD_PATH'
+                LOCAL_PATH: 'archive_build/'
+                DEBUG: 'true'
+                DELETE_FLAG: 'false'
+            - sh pipe_stage_log_procedure.sh

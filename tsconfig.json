@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+    "target": "es6",
+    "module": "commonjs",
+    "rootDir": "sources",
+    "outDir": "dev_bin",
+    "baseUrl": "sources",
+    "moduleResolution": "node",
+    "noImplicitAny": false,
+    "noEmit": false,
+    "strict": false,
+    "allowJs": false,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "importHelpers": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "typeRoots": [
+        "node_modules/@types"
+    ]
+    },
+    "include": [
+        "sources/**/*"
+    ],
+    "exclude": [
+        "node_modules"
+    ],
+}
